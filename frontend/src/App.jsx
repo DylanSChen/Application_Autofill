@@ -17,7 +17,15 @@ function App() {
     }
   })
 
-  const [savedProfile, setSavedProfile] = useState(null)
+  const [savedProfile, setSavedProfile] = useState(() => {
+    const storedProfile = localStorage.getItem('applicationProfile')
+
+    if (storedProfile) {
+      return JSON.parse(storedProfile)
+    }
+
+    return null
+  })
 
   function handleChange(event) {
     const { name, value } = event.target
