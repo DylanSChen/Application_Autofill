@@ -3,7 +3,7 @@ import { useState } from 'react'
 function App() {
   const [profile, setProfile] = useState(() => {
     const storedProfile = localStorage.getItem('applicationProfile')
-    console.log(storedProfile)
+
     if (storedProfile) {
       return JSON.parse(storedProfile)
     }
