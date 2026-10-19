@@ -333,6 +333,12 @@
   font-size: 12px;
 }
 
+.upload-status {
+  margin-top: 9px;
+  color: #418260;
+  font-size: 12px;
+}
+
 .privacy-note {
   margin-top: 11px;
   color: #9a9cac;
