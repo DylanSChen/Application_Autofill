@@ -10,6 +10,11 @@ const emptyProfile = {
   school: '',
   degree: '',
   major: '',
+  undergraduateSchool: '',
+  graduateSchool: '',
+  undergraduateGpa: '',
+  graduateGpa: '',
+  programName: '',
 }
 
 function readStoredProfile() {
@@ -30,7 +35,10 @@ function App() {
   const [savedProfile, setSavedProfile] = useState(() => readStoredProfile())
   const [resumeFile, setResumeFile] = useState(null)
   const [resumeError, setResumeError] = useState('')
+  const [resumeStatus, setResumeStatus] = useState('')
+  const [isParsing, setIsParsing] = useState(false)
   const resumeInputRef = useRef(null)
+  const parseRequestRef = useRef(0)
 
   function handleChange(event) {
     const { name, value } = event.target
@@ -41,7 +49,7 @@ function App() {
     }))
   }
 
-  function handleResumeFile(file) {
+  async function handleResumeFile(file) {
     if (!file) {
       return
     }
@@ -51,8 +59,61 @@ function App() {
       return
     }
 
+    const requestId = parseRequestRef.current + 1
+    parseRequestRef.current = requestId
     setResumeFile(file)
     setResumeError('')
+    setResumeStatus('')
+    setIsParsing(true)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fetch('/api/resumes/parse', {
+        method: 'POST',
+        body: formData,
+      })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.detail || 'The resume could not be parsed.')
+      }
+
+      const parsedProfile = result.profile
+      if (requestId !== parseRequestRef.current) {
+        return
+      }
+
+      const parsedEntries = Object.entries(parsedProfile)
+      if (parsedEntries.length === 0) {
+        setResumeError('No supported profile details were found. You can enter them manually.')
+        return
+      }
+
+      setProfile((currentProfile) => {
+        const updatedProfile = { ...currentProfile }
+        parsedEntries.forEach(([key, value]) => {
+          if (value && !String(updatedProfile[key] ?? '').trim()) {
+            updatedProfile[key] = value
+          }
+        })
+        return updatedProfile
+      })
+      setResumeError('')
+      setResumeStatus('Resume parsed by the backend. Review detected details below; existing entries are preserved.')
+    } catch (error) {
+      if (requestId !== parseRequestRef.current) {
+        return
+      }
+      setResumeError(
+        error instanceof Error
+          ? error.message
+          : 'The resume could not be parsed. Please try another PDF.',
+      )
+    } finally {
+      if (requestId === parseRequestRef.current) {
+        setIsParsing(false)
+      }
+    }
   }
 
   function handleResumeChange(event) {
@@ -73,8 +134,11 @@ function App() {
   }
 
   function handleRemoveResume() {
+    parseRequestRef.current += 1
     setResumeFile(null)
     setResumeError('')
+    setResumeStatus('')
+    setIsParsing(false)
   }
 
   return (
@@ -89,7 +153,7 @@ function App() {
           <p className="eyebrow">YOUR PROFILE</p>
           <h1>Make applying feel effortless.</h1>
           <p className="intro-copy">
-            Save your details once and have them ready whenever you apply.
+            Add your details once, or upload a resume to fill in what we can recognize.
           </p>
         </div>
 
@@ -171,20 +235,70 @@ function App() {
             <div className="section-heading">
               <div>
                 <h2 id="education-heading">Education</h2>
-                <p>Add your most recent education details.</p>
+                <p>Add your undergraduate, graduate, and program details.</p>
               </div>
               <span className="section-number">02</span>
             </div>
 
             <div className="field-grid">
               <label className="field field-full">
-                <span>School</span>
+                <span>Most recent school</span>
                 <input
                   name="school"
                   value={profile.school}
                   onChange={handleChange}
                   placeholder="University or institution"
                   autoComplete="organization"
+                />
+              </label>
+
+              <label className="field field-full">
+                <span>Undergraduate school</span>
+                <input
+                  name="undergraduateSchool"
+                  value={profile.undergraduateSchool}
+                  onChange={handleChange}
+                  placeholder="Undergraduate university or college"
+                />
+              </label>
+
+              <label className="field">
+                <span>Undergraduate GPA</span>
+                <input
+                  name="undergraduateGpa"
+                  value={profile.undergraduateGpa}
+                  onChange={handleChange}
+                  placeholder="e.g. 3.8 / 4.0"
+                />
+              </label>
+
+              <label className="field field-full">
+                <span>Graduate school</span>
+                <input
+                  name="graduateSchool"
+                  value={profile.graduateSchool}
+                  onChange={handleChange}
+                  placeholder="Graduate university or college"
+                />
+              </label>
+
+              <label className="field">
+                <span>Graduate GPA</span>
+                <input
+                  name="graduateGpa"
+                  value={profile.graduateGpa}
+                  onChange={handleChange}
+                  placeholder="e.g. 3.9 / 4.0"
+                />
+              </label>
+
+              <label className="field">
+                <span>Program name</span>
+                <input
+                  name="programName"
+                  value={profile.programName}
+                  onChange={handleChange}
+                  placeholder="e.g. Data Science"
                 />
               </label>
 
@@ -214,7 +328,7 @@ function App() {
             <div className="section-heading">
               <div>
                 <h2 id="resume-heading">Resume</h2>
-                <p>Keep a PDF resume handy for your applications.</p>
+                <p>Upload a resume to automatically fill in matching profile details.</p>
               </div>
               <span className="section-number">03</span>
             </div>
@@ -233,7 +347,9 @@ function App() {
                 <div className="pdf-icon" aria-hidden="true">PDF</div>
                 <div className="resume-file-details">
                   <span className="resume-file-name">{resumeFile.name}</span>
-                  <span className="resume-file-status">Selected for this session</span>
+                  <span className="resume-file-status">
+                    {isParsing ? 'Reading PDF and extracting details…' : 'Selected for this session'}
+                  </span>
                 </div>
                 <div className="resume-actions">
                   <button
@@ -278,7 +394,8 @@ function App() {
               </div>
             )}
             {resumeError && <p className="upload-error" role="alert">{resumeError}</p>}
-            <p className="privacy-note">Your resume is selected for this session and isn&apos;t uploaded to a server.</p>
+            {resumeStatus && <p className="upload-status" role="status">{resumeStatus}</p>}
+            <p className="privacy-note">Your PDF is sent to the Application Autofill backend for in-memory processing and isn&apos;t stored. Scanned PDFs aren&apos;t supported yet.</p>
           </section>
 
           <div className="form-footer">
@@ -305,6 +422,11 @@ function App() {
               <p><span>Phone</span>{savedProfile.phone || '—'}</p>
               <p><span>LinkedIn</span>{savedProfile.linkedin || '—'}</p>
               <p><span>School</span>{savedProfile.school || '—'}</p>
+              <p><span>Undergraduate school</span>{savedProfile.undergraduateSchool || '—'}</p>
+              <p><span>Undergraduate GPA</span>{savedProfile.undergraduateGpa || '—'}</p>
+              <p><span>Graduate school</span>{savedProfile.graduateSchool || '—'}</p>
+              <p><span>Graduate GPA</span>{savedProfile.graduateGpa || '—'}</p>
+              <p><span>Program</span>{savedProfile.programName || '—'}</p>
               <p><span>Degree</span>{savedProfile.degree || '—'}</p>
               <p><span>Major</span>{savedProfile.major || '—'}</p>
             </div>
