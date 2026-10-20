@@ -39,7 +39,9 @@ async def parse_resume(file: UploadFile = File(...)) -> dict[str, dict[str, str]
                 status_code=413,
                 detail=f"The resume must have {MAX_PDF_PAGES} pages or fewer.",
             )
-        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        text = "\n".join(
+            page.extract_text(extraction_mode="layout") or "" for page in reader.pages
+        )
     except HTTPException:
         raise
     except (PdfReadError, ValueError) as error:
