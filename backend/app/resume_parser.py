@@ -4,7 +4,7 @@ import re
 SECTION_HEADING = re.compile(
     r"^(education|academic background|academic history|professional experience|"
     r"work experience|employment|projects|skills|certifications|awards|"
-    r"publications|volunteer experience)\s*:?\s*$",
+    r"publications|volunteer experience|technical skills)\s*:?\s*$",
     re.IGNORECASE,
 )
 EDUCATION_HEADING = re.compile(
@@ -49,7 +49,7 @@ PHONE = re.compile(
     r"(?<!\d)(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}(?!\d)"
 )
 LINKEDIN = re.compile(
-    r"https?://(?:www\.)?linkedin\.com/in/[A-Z0-9_-]+/?", re.IGNORECASE
+    r"(?:https?://)?(?:www\.)?linkedin\.com/in/[A-Z0-9_-]+/?", re.IGNORECASE
 )
 NAME_EXCLUSIONS = re.compile(
     r"\b(resume|curriculum vitae|software|engineer|developer|manager|designer|"
@@ -61,14 +61,12 @@ PROGRAM_LABEL = re.compile(
     r"\b(?:major|program|concentration|field of study)\s*[:-]\s*([^|,;]+)",
     re.IGNORECASE,
 )
-PROGRAM_SUBJECT = re.compile(
-    r"\b(?:in|major(?:ing)? in)\s+(.+?)(?=,|;|\||\bGPA\b|$)",
+SPECIALIZATION = re.compile(
+    r"\b(?:specialization|concentration)\s+(?:in\s+)?(.+?)(?=,|;|\||\bGPA\b|\s{2,}|$)",
     re.IGNORECASE,
 )
-DEGREE_END = re.compile(
-    r"\b(?:in|major(?:ing)? in|program)\b|[,;|]|\bGPA\b|"
-    r"\b(?:May|June|July|August|September|October|November|December|"
-    r"January|February|March|April)\b",
+PROGRAM_SUBJECT = re.compile(
+    r"\b(?:in|major(?:ing)? in)\s+(.+?)(?=,|;|\||\bGPA\b|$)",
     re.IGNORECASE,
 )
 
@@ -115,6 +113,26 @@ def _find_program(line: str, lines: list[str], index: int) -> str:
         if labeled:
             return _clean(labeled.group(1))
 
+    degree_match = DEGREE.search(line)
+    if degree_match:
+        remainder = line[degree_match.end() :]
+        remainder = re.sub(r"^\s*[.,]\s*", "", remainder)
+        remainder = re.sub(
+            r"^\s*of\s+(?:science|arts|engineering|business administration)\s+",
+            "",
+            remainder,
+            flags=re.IGNORECASE,
+        )
+        remainder = re.sub(r"^\s*in\s+", "", remainder, flags=re.IGNORECASE)
+        subject = re.split(
+            r",|;|\||\bGPA\b|\s{2,}",
+            remainder,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0]
+        if _clean(subject):
+            return _clean(subject)
+
     match = PROGRAM_SUBJECT.search(line)
     return _clean(match.group(1)) if match else ""
 
@@ -123,9 +141,15 @@ def _find_degree(line: str) -> str:
     match = DEGREE.search(line)
     if not match:
         return ""
-    remainder = line[match.start() :]
-    end_match = DEGREE_END.search(remainder)
-    return _clean(remainder[: end_match.start()] if end_match else remainder)
+    degree = match.group(0)
+    if match.end() < len(line) and line[match.end()] == ".":
+        degree += "."
+    return _clean(degree)
+
+
+def _find_specialization(line: str) -> str:
+    match = SPECIALIZATION.search(line)
+    return _clean(match.group(1)) if match else ""
 
 
 def _find_gpa(lines: list[str], index: int) -> str:
@@ -135,6 +159,7 @@ def _find_gpa(lines: list[str], index: int) -> str:
 
 
 def _institution_name(line: str) -> str:
+    line = re.split(r"\s{2,}", line.strip(), maxsplit=1)[0]
     institution_match = INSTITUTION.search(line)
     degree_match = DEGREE.search(line)
     if not institution_match:
@@ -204,6 +229,7 @@ def _education_records(lines: list[str]) -> list[dict[str, str]]:
                 "school": school,
                 "degree": _find_degree(line),
                 "programName": _find_program(line, section_lines, index),
+                "specialization": _find_specialization(line),
                 "gpa": _find_gpa(section_lines, index),
             }
         )
@@ -212,14 +238,17 @@ def _education_records(lines: list[str]) -> list[dict[str, str]]:
 
 def parse_resume_text(text: str) -> dict[str, str]:
     """Extract likely contact and education fields from selectable resume text."""
-    lines = [_clean(line) for line in text.splitlines()]
+    lines = [line.strip() for line in text.splitlines()]
     lines = [line for line in lines if line]
     result = _find_name(lines)
 
     for key, pattern in (("email", EMAIL), ("phone", PHONE), ("linkedin", LINKEDIN)):
         match = pattern.search(text)
         if match:
-            result[key] = _clean(match.group(0))
+            value = _clean(match.group(0))
+            if key == "linkedin" and not value.startswith("http"):
+                value = f"https://{value}"
+            result[key] = value
 
     records = _education_records(lines)
     undergraduate = next(
@@ -258,6 +287,11 @@ def parse_resume_text(text: str) -> dict[str, str]:
     extracted = {
         "undergraduateSchool": undergraduate and undergraduate["school"],
         "graduateSchool": graduate and graduate["school"],
+        "undergraduateDegree": undergraduate and undergraduate["degree"],
+        "graduateDegree": graduate and graduate["degree"],
+        "undergraduateMajor": undergraduate and undergraduate["programName"],
+        "graduateMajor": graduate and graduate["programName"],
+        "undergraduateSpecialization": undergraduate and undergraduate["specialization"],
         "undergraduateGpa": undergraduate and undergraduate["gpa"],
         "graduateGpa": graduate and graduate["gpa"],
         "school": best_school and best_school["school"],

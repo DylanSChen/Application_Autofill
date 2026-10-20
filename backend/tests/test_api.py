@@ -52,7 +52,8 @@ def test_rejects_pdf_without_selectable_text() -> None:
 
 def test_returns_detected_profile_fields(monkeypatch) -> None:
     class FakePage:
-        def extract_text(self) -> str:
+        def extract_text(self, *, extraction_mode: str) -> str:
+            assert extraction_mode == "layout"
             return "Jane Doe\njane.doe@example.com"
 
     class FakeReader:
